@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Air Draw ✦ Gesture Canvas</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0f;
+    font-family: 'Space Mono', monospace;
+    color: #fff;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  #app { position: relative; width: 100vw; height: 100vh; }
+
+  #video {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+  }
+
+  #drawCanvas, #landmarkCanvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+  #landmarkCanvas { transform: scaleX(-1); }
+
+  /* ─── Panel ─── */
+  #panel {
+    position: absolute; right: 20px; top: 50%;
+    transform: translateY(-50%);
+    background: rgba(10,10,20,0.85);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+    padding: 20px 16px;
+    width: 90px;
+    display: flex; flex-direction: column; gap: 18px;
+    backdrop-filter: blur(12px);
+    z-index: 10;
+  }
+
+  .panel-label {
+    font-size: 9px; letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.35);
+    margin-bottom: -10px;
+  }
+
+  #colors { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
+
+  .swatch {
+    width: 22px; height: 22px; border-radius: 50%;
+    cursor: pointer; border: 2px solid transparent;
+    transition: transform 0.15s, border-color 0.15s;
+  }
+  .swatch:hover { transform: scale(1.15); }
+  .swatch.active { border-color: #fff; transform: scale(1.2); }
+
+  .slider-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    writing-mode: vertical-lr; direction: rtl;
+    height: 70px; width: 4px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 2px; outline: none; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: #fff; border-radius: 50%;
+    box-shadow: 0 0 6px rgba(255,255,255,0.5);
+  }
+  .slider-val { font-size: 9px; color: rgba(255,255,255,0.5); }
+
+  .action-btn {
+    width: 38px; height: 38px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.05);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-size: 16px; transition: background 0.2s, transform 0.15s;
+    align-self: center;
+  }
+  .action-btn:hover { background: rgba(255,255,255,0.12); transform: scale(1.08); }
+
+  /* ─── Status Badge ─── */
+  #statusBadge {
+    position: absolute; bottom: 32px; left: 50%;
+    transform: translateX(-50%);
+    padding: 8px 22px; border-radius: 999px;
+    font-family: 'Syne', sans-serif; font-size: 13px;
+    font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;
+    transition: all 0.25s ease; z-index: 10;
+    pointer-events: none; opacity: 0; white-space: nowrap;
+  }
+  #statusBadge.drawing {
+    opacity: 1;
+    background: rgba(255,220,60,0.2);
+    border: 1.5px solid rgba(255,220,60,0.6);
+    color: #ffdc3c; box-shadow: 0 0 18px rgba(255,220,60,0.25);
+  }
+  #statusBadge.erasing {
+    opacity: 1;
+    background: rgba(255,80,80,0.15);
+    border: 1.5px solid rgba(255,80,80,0.5);
+    color: #ff6060; box-shadow: 0 0 18px rgba(255,80,80,0.2);
+  }
+  #statusBadge.idle {
+    opacity: 0.6;
+    background: rgba(255,255,255,0.06);
+    border: 1.5px solid rgba(255,255,255,0.15);
+    color: rgba(255,255,255,0.5); box-shadow: none;
+  }
+
+  /* ─── Title ─── */
+  #title { position: absolute; top: 20px; left: 24px; z-index: 10; pointer-events: none; }
+  #title h1 {
+    font-family: 'Syne', sans-serif; font-size: 22px; font-weight: 800; letter-spacing: -0.02em;
+    background: linear-gradient(90deg, #fff 40%, rgba(255,255,255,0.4));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  #title p { font-size: 10px; color: rgba(255,255,255,0.3); margin-top: 2px; letter-spacing: 0.05em; }
+
+  /* ─── Loader ─── */
+  #loader {
+    position: absolute; inset: 0; background: #0a0a0f;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 18px; z-index: 100;
+  }
+  #loader h2 { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; }
+  #loader p  { font-size: 12px; color: rgba(255,255,255,0.4); }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid rgba(255,255,255,0.1); border-top-color: #fff;
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── Hint ─── */
+  #hint {
+    position: absolute; top: 20px; right: 120px; z-index: 10; pointer-events: none;
+    background: rgba(10,10,20,0.75); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; padding: 10px 14px; font-size: 10px;
+    color: rgba(255,255,255,0.45); line-height: 1.8; backdrop-filter: blur(8px);
+  }
+  #hint span { color: rgba(255,255,255,0.75); }
+
+  /* ─── Shortcuts ─── */
+  #shortcuts {
+    position: absolute; bottom: 32px; right: 120px; z-index: 10; pointer-events: none;
+    font-size: 9px; color: rgba(255,255,255,0.2); text-align: right; line-height: 1.8; letter-spacing: 0.05em;
+  }
+  #shortcuts kbd {
+    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 4px; padding: 1px 5px;
+    font-family: 'Space Mono', monospace; font-size: 8px; color: rgba(255,255,255,0.35);
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="loader">
+    <div class="spinner"></div>
+    <h2>Air Draw ✦</h2>
+    <p>Loading hand tracking model...</p>
+  </div>
+
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="drawCanvas"></canvas>
+  <canvas id="landmarkCanvas"></canvas>
+
+  <div id="title">
+    <h1>Air Draw ✦</h1>
+    <p>gesture-controlled canvas</p>
+  </div>
+
+  <div id="hint">
+    <span>☝️ Index up</span> → Draw<br>
+    <span>✌️ Two fingers</span> → Pause<br>
+    <span>🖐 Open palm</span> → Erase<br>
+    <span>✊ Fist</span> → Stop
+  </div>
+
+  <div id="shortcuts">
+    <kbd>Ctrl Z</kbd> undo &nbsp;·&nbsp; <kbd>Del</kbd> clear
+  </div>
+
+  <div id="panel">
+    <div class="panel-label">Colors</div>
+    <div id="colors">
+      <div class="swatch active" style="background:#ff3da0" data-color="#ff3da0"></div>
+      <div class="swatch" style="background:#3df0ff" data-color="#3df0ff"></div>
+      <div class="swatch" style="background:#ffe53d" data-color="#ffe53d"></div>
+      <div class="swatch" style="background:#b43dff" data-color="#b43dff"></div>
+      <div class="swatch" style="background:#3dff85" data-color="#3dff85"></div>
+      <div class="swatch" style="background:#ff8c3d" data-color="#ff8c3d"></div>
+      <div class="swatch" style="background:#fff" data-color="#ffffff"></div>
+      <div class="swatch" style="background:#ff4444" data-color="#ff4444"></div>
+      <div class="swatch" style="background:#4488ff" data-color="#4488ff"></div>
+    </div>
+
+    <div class="panel-label">Thickness</div>
+    <div class="slider-wrap">
+      <input type="range" id="thickSlider" min="2" max="30" value="8" orient="vertical">
+      <span class="slider-val" id="thickVal">8px</span>
+    </div>
+
+    <div class="panel-label">Glow</div>
+    <div class="slider-wrap">
+      <input type="range" id="glowSlider" min="0" max="100" value="60" orient="vertical">
+      <span class="slider-val" id="glowVal">60%</span>
+    </div>
+
+    <button class="action-btn" id="undoBtn"  title="Undo (Ctrl+Z)">↩</button>
+    <button class="action-btn" id="clearBtn" title="Clear (Delete)">🗑</button>
+    <button class="action-btn" id="saveBtn"  title="Save">💾</button>
+  </div>
+
+  <div id="statusBadge">✦ DRAWING</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core@4.10.0/dist/tf-core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.10.0/dist/tf-backend-webgl.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection@2.0.0/dist/hand-pose-detection.min.js"></script>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let color      = '#ff3da0';
+let thickness  = 8;
+let glowAmount = 60;
+let mode       = 'idle';   // 'drawing' | 'erasing' | 'idle'
+let strokes    = [];       // { points[], color, thickness, glow, eraser }
+let currentStroke = [];
+
+// Jitter reduction: exponential moving average on fingertip position
+let smoothX = null, smoothY = null;
+const SMOOTH_ALPHA = 0.4;  // lower → smoother, more lag
+
+// Gesture debounce: N consecutive same-gesture frames before committing
+const GESTURE_FRAMES = 3;
+let gestureHistory   = [];
+let committedGesture = 'idle';
+
+const video       = document.getElementById('video');
+const drawCanvas  = document.getElementById('drawCanvas');
+const lmCanvas    = document.getElementById('landmarkCanvas');
+const ctx         = drawCanvas.getContext('2d');
+const lmCtx       = lmCanvas.getContext('2d');
+const statusBadge = document.getElementById('statusBadge');
+const loader      = document.getElementById('loader');
+
+// ─── Canvas resize ───────────────────────────────────────────────────────────
+function resize() {
+  drawCanvas.width  = lmCanvas.width  = window.innerWidth;
+  drawCanvas.height = lmCanvas.height = window.innerHeight;
+  redrawAll();
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function hexToRgb(hex) {
+  return {
+    r: parseInt(hex.slice(1,3), 16),
+    g: parseInt(hex.slice(3,5), 16),
+    b: parseInt(hex.slice(5,7), 16),
+  };
+}
+
+// Trace a smooth quadratic-bezier path through points (midpoint method)
+function tracePath(context, points) {
+  context.beginPath();
+  context.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length - 1; i++) {
+    const mx = (points[i].x + points[i+1].x) / 2;
+    const my = (points[i].y + points[i+1].y) / 2;
+    context.quadraticCurveTo(points[i].x, points[i].y, mx, my);
+  }
+  const last = points[points.length - 1];
+  context.lineTo(last.x, last.y);
+}
+
+// Draw one full stroke (glow layers + core, or eraser)
+function drawStroke(context, stroke) {
+  const { points, color: col, thickness: thick, glow, eraser } = stroke;
+  if (points.length < 2) return;
+
+  context.save();
+  context.lineCap  = 'round';
+  context.lineJoin = 'round';
+
+  if (eraser) {
+    context.globalCompositeOperation = 'destination-out';
+    context.strokeStyle = 'rgba(0,0,0,1)';
+    context.lineWidth   = thick;
+    context.shadowBlur  = 0;
+    tracePath(context, points);
+    context.stroke();
+  } else {
+    const { r, g, b } = hexToRgb(col);
+    const glowR = thick * (glow / 100) * 5;
+
+    if (glowR > 0) {
+      // Outer glow
+      context.shadowBlur  = glowR * 2;
+      context.shadowColor = `rgba(${r},${g},${b},0.6)`;
+      context.strokeStyle = `rgba(${r},${g},${b},0.3)`;
+      context.lineWidth   = thick * 2.5;
+      tracePath(context, points); context.stroke();
+
+      // Inner glow
+      context.shadowBlur  = glowR;
+      context.shadowColor = `rgba(${r},${g},${b},0.9)`;
+      context.strokeStyle = `rgba(${r},${g},${b},0.7)`;
+      context.lineWidth   = thick * 1.3;
+      tracePath(context, points); context.stroke();
+    }
+
+    // Core bright line
+    context.shadowBlur  = 4;
+    context.shadowColor = 'rgba(255,255,255,0.8)';
+    context.strokeStyle = col;
+    context.lineWidth   = thick * 0.6;
+    tracePath(context, points); context.stroke();
+  }
+
+  context.restore();
+}
+
+function redrawAll() {
+  ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+  for (const s of strokes) drawStroke(ctx, s);
+}
+
+// ─── Gesture detection ────────────────────────────────────────────────────────
+function isFingerUp(kp, tip, pip) { return kp[tip].y < kp[pip].y; }
+
+function rawGesture(kp) {
+  const iUp = isFingerUp(kp, 8,  6);
+  const mUp = isFingerUp(kp, 12, 10);
+  const rUp = isFingerUp(kp, 16, 14);
+  const pUp = isFingerUp(kp, 20, 18);
+  if (iUp && mUp && rUp && pUp)      return 'erasing';  // open palm → erase
+  if (iUp && !mUp && !rUp && !pUp)   return 'drawing';  // only index → draw
+  return 'idle';
+}
+
+// Require GESTURE_FRAMES consecutive frames before changing committed gesture
+function stableGesture(raw) {
+  gestureHistory.push(raw);
+  if (gestureHistory.length > GESTURE_FRAMES) gestureHistory.shift();
+  if (gestureHistory.length === GESTURE_FRAMES &&
+      gestureHistory.every(g => g === raw)) {
+    committedGesture = raw;
+  }
+  return committedGesture;
+}
+
+// ─── Per-frame hand processing ────────────────────────────────────────────────
+function processHands(hands) {
+  lmCtx.clearRect(0, 0, lmCanvas.width, lmCanvas.height);
+
+  if (!hands || hands.length === 0) {
+    finishStroke();
+    smoothX = smoothY = null;
+    return;
+  }
+
+  const kp      = hands[0].keypoints;
+  const gesture = stableGesture(rawGesture(kp));
+
+  // Scale + mirror to canvas space
+  const sx   = lmCanvas.width  / video.videoWidth;
+  const sy   = lmCanvas.height / video.videoHeight;
+  const rawX = lmCanvas.width - kp[8].x * sx;
+  const rawY = kp[8].y * sy;
+
+  // Exponential smoothing
+  if (smoothX === null) { smoothX = rawX; smoothY = rawY; }
+  else {
+    smoothX = SMOOTH_ALPHA * rawX + (1 - SMOOTH_ALPHA) * smoothX;
+    smoothY = SMOOTH_ALPHA * rawY + (1 - SMOOTH_ALPHA) * smoothY;
+  }
+  const tipX = smoothX, tipY = smoothY;
+
+  // ── Cursor ────────────────────────────────────────────────────────────────
+  const isErasing = gesture === 'erasing';
+  const isActive  = gesture === 'drawing' || isErasing;
+  const cursorCol = isErasing ? '#ff6060' : (isActive ? color : 'rgba(255,255,255,0.3)');
+  const ringR     = isErasing ? (thickness + 10) / 2 + 6 : thickness / 2 + 8;
+
+  lmCtx.save();
+  lmCtx.globalAlpha  = isActive ? 0.95 : 0.4;
+  lmCtx.shadowBlur   = isActive ? 14 : 4;
+  lmCtx.shadowColor  = cursorCol;
+  lmCtx.strokeStyle  = cursorCol;
+  lmCtx.lineWidth    = 2;
+  lmCtx.beginPath();
+  lmCtx.arc(tipX, tipY, ringR, 0, Math.PI * 2);
+  lmCtx.stroke();
+
+  lmCtx.globalAlpha = isActive ? 1 : 0.5;
+  lmCtx.fillStyle   = cursorCol;
+  lmCtx.beginPath();
+  lmCtx.arc(tipX, tipY, 3, 0, Math.PI * 2);
+  lmCtx.fill();
+  lmCtx.restore();
+
+  // ── Act on gesture ────────────────────────────────────────────────────────
+  if (gesture === 'drawing' || gesture === 'erasing') {
+    setMode(gesture);
+    currentStroke.push({ x: tipX, y: tipY });
+    // Live preview
+    redrawAll();
+    if (currentStroke.length > 1) {
+      drawStroke(ctx, {
+        points:    currentStroke,
+        color,
+        thickness: isErasing ? thickness + 10 : thickness,
+        glow:      isErasing ? 0 : glowAmount,
+        eraser:    isErasing,
+      });
+    }
+  } else {
+    finishStroke();
+  }
+}
+
+function finishStroke() {
+  if (currentStroke.length > 1) {
+    const isEraser = mode === 'erasing';
+    strokes.push({
+      points:    [...currentStroke],
+      color,
+      thickness: isEraser ? thickness + 10 : thickness,
+      glow:      isEraser ? 0 : glowAmount,
+      eraser:    isEraser,
+    });
+    redrawAll();
+  }
+  currentStroke = [];
+  setMode('idle');
+}
+
+function setMode(m) {
+  if (mode === m) return;
+  mode = m;
+  const labels = { drawing: '✦ DRAWING', erasing: '◌ ERASING', idle: '— IDLE' };
+  statusBadge.textContent = labels[m];
+  statusBadge.className   = m;
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+window.addEventListener('load', async () => {
+  try {
+    loader.querySelector('p').textContent = 'Loading TF.js backend...';
+    await tf.setBackend('webgl');
+    await tf.ready();
+
+    loader.querySelector('p').textContent = 'Loading hand detection model...';
+    const detector = await handPoseDetection.createDetector(
+      handPoseDetection.SupportedModels.MediaPipeHands, {
+        runtime:      'mediapipe',
+        solutionPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915',
+        modelType:    'full',
+        maxHands:     1,
+      }
+    );
+
+    loader.querySelector('p').textContent = 'Starting camera...';
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }
+    });
+    video.srcObject = stream;
+    await new Promise(r => video.onloadedmetadata = r);
+    video.play();
+
+    loader.style.transition = 'opacity 0.4s';
+    loader.style.opacity    = '0';
+    setTimeout(() => loader.style.display = 'none', 400);
+
+    // Detection runs as fast as model allows (decoupled from 60fps render)
+    let latestHands = null;
+    (async function detectLoop() {
+      while (true) {
+        if (video.readyState >= 2) {
+          latestHands = await detector.estimateHands(video, { flipHorizontal: false });
+        }
+        await new Promise(r => setTimeout(r, 0));
+      }
+    })();
+
+    (function renderLoop() {
+      if (latestHands !== null) processHands(latestHands);
+      requestAnimationFrame(renderLoop);
+    })();
+
+  } catch(err) {
+    console.error(err);
+    const isPerm  = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
+    const isFile  = location.protocol === 'file:';
+    loader.innerHTML = `
+      <div style="font-size:42px;margin-bottom:4px">${isPerm ? '🎥' : '⚠️'}</div>
+      <h2 style="font-family:'Syne',sans-serif;font-size:22px;font-weight:800;margin:0">
+        ${isPerm ? 'Camera Access Denied' : 'Something went wrong'}
+      </h2>
+      ${isFile ? `
+        <p style="color:#ffdc3c;font-size:11px;max-width:320px;text-align:center;line-height:1.8;margin-top:8px">
+          You're opening this via <strong>file://</strong> — browsers block camera for local files.<br>
+          Serve it over localhost instead:
+        </p>
+        <code style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);padding:8px 16px;border-radius:8px;font-size:12px;margin-top:4px">npx serve .</code>
+        <p style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:6px">then open <strong style="color:rgba(255,255,255,0.5)">http://localhost:3000</strong></p>
+      ` : isPerm ? `
+        <p style="color:rgba(255,255,255,0.45);font-size:11px;max-width:300px;text-align:center;line-height:1.9;margin-top:8px">
+          <span style="color:rgba(255,255,255,0.7)">1.</span> Click the <strong>🔒 lock icon</strong> in your address bar<br>
+          <span style="color:rgba(255,255,255,0.7)">2.</span> Set <strong>Camera</strong> → <em>Allow</em><br>
+          <span style="color:rgba(255,255,255,0.7)">3.</span> Reload the page
+        </p>
+        <button onclick="location.reload()"
+          style="margin-top:12px;padding:10px 28px;border-radius:999px;border:1px solid rgba(255,255,255,0.2);background:rgba(255,255,255,0.07);color:#fff;font-family:'Space Mono',monospace;font-size:12px;cursor:pointer;letter-spacing:0.06em"
+          onmouseover="this.style.background='rgba(255,255,255,0.14)'" onmouseout="this.style.background='rgba(255,255,255,0.07)'">
+          ↺ &nbsp;Retry
+        </button>
+      ` : `
+        <p style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:8px">${err.message}</p>
+      `}
+    `;
+  }
+});
+
+// ─── Controls ─────────────────────────────────────────────────────────────────
+document.querySelectorAll('.swatch').forEach(sw => {
+  sw.addEventListener('click', () => {
+    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+    sw.classList.add('active');
+    color = sw.dataset.color;
+  });
+});
+
+const thickSlider = document.getElementById('thickSlider');
+const thickVal    = document.getElementById('thickVal');
+thickSlider.addEventListener('input', () => {
+  thickness = +thickSlider.value;
+  thickVal.textContent = thickness + 'px';
+});
+
+const glowSlider = document.getElementById('glowSlider');
+const glowVal    = document.getElementById('glowVal');
+glowSlider.addEventListener('input', () => {
+  glowAmount = +glowSlider.value;
+  glowVal.textContent = glowAmount + '%';
+});
+
+function doUndo()  { if (strokes.length) { strokes.pop(); redrawAll(); } }
+function doClear() { strokes = []; currentStroke = []; ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height); }
+
+document.getElementById('undoBtn').addEventListener('click', doUndo);
+document.getElementById('clearBtn').addEventListener('click', doClear);
+
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const out  = document.createElement('canvas');
+  out.width  = drawCanvas.width;
+  out.height = drawCanvas.height;
+  const octx = out.getContext('2d');
+  // Mirror video to match user's view
+  octx.save();
+  octx.scale(-1, 1);
+  octx.drawImage(video, -out.width, 0, out.width, out.height);
+  octx.restore();
+  octx.drawImage(drawCanvas, 0, 0);
+  const a    = document.createElement('a');
+  a.href     = out.toDataURL('image/png');
+  a.download = 'air-draw.png';
+  a.click();
+});
+
+// ─── Keyboard shortcuts ───────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); doUndo(); }
+  if (e.key === 'Delete' || e.key === 'Backspace') doClear();
+});
+</script>
+</body>
+</html>
